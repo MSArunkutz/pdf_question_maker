@@ -1,7 +1,7 @@
-fastapi==0.109.2
-uvicorn==0.27.1
-python-multipart==0.0.9
-pypdf==4.0.1
-tenacity==8.2.3
-google-generativeai==0.4.0
+fastapi>=0.115.0,<0.119.0
+uvicorn>=0.40.0
+python-multipart>=0.0.21
+pypdf>=6.5.0
+tenacity>=9.1.2
+google-generativeai>=0.8.0
 python-dotenv

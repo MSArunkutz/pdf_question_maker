@@ -94,6 +94,9 @@ function App() {
         {status === 'complete' && (
           <div className="results-container">
             <h3>Generated Questions</h3>
+            <p className="source-filename" style={{ fontSize: '0.9rem', color: 'var(--text-dim)', marginBottom: '1.5rem', textAlign: 'left' }}>
+              Questions Generated from file : <strong>{file?.name}</strong>
+            </p>
             <ul style={{ textAlign: 'left', marginBottom: '1rem' }}>
               {questions.map((q, idx) => (
                 <li key={idx} style={{ marginBottom: '0.5rem' }}>{q}</li>

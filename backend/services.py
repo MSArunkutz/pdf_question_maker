@@ -1,6 +1,5 @@
 import io
 import json
-import logging
 import os
 import re
 from typing import List, Optional
@@ -9,19 +8,22 @@ import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_fixed
 from dotenv import load_dotenv
 
+from utils import logger
+
 env_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(env_path)
 
-logger = logging.getLogger("pdf_question_maker")
-
 # Configure Gemini
 api_key = os.getenv("GEMINI_API_KEY")
+model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
 if api_key:
     genai.configure(api_key=api_key)
-    logger.info("Gemini configured successfully")
+    logger.info(f"Gemini configured successfully with model: {model_name}")
 else:
-    logger.warning("Gemini configuration failed")
+    logger.warning("Gemini configuration failed: GEMINI_API_KEY not found")
 
+logger.info(f"Model name: {model_name}")
 
 class ServiceError(Exception):
     def __init__(self, message: str):
@@ -66,22 +68,23 @@ def validate_pdf(file_content: bytes, filename: str) -> str:
     except Exception as e:
         if isinstance(e, ServiceError):
             raise e
-        logger.error(f"Error processing PDF: {str(e)}")
-        raise ServiceError(f"Failed to process PDF: {str(e)}")
+        # NOTE: Log the real exception internally, but don't leak it in ServiceError
+        logger.error(f"Error processing PDF '{filename}': {str(e)}", exc_info=True)
+        raise ServiceError("Failed to process PDF content")
 
 def sanitize_text(text: str) -> str:
-    # Collapse newlines and whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    # Collapse multiple whitespaces but preserve double newlines for paragraph structure
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
     # Cap max chars
-    return text[:25000]
+    return text[:25000].strip()
 
 @retry(stop=stop_after_attempt(2), wait=wait_fixed(1))
 def generate_questions_with_gemini(text: str) -> List[str]:
     if not api_key:
-        logger.warning("No GEMINI_API_KEY found. Using dummy fallback.")
-        return get_dummy_questions()
+        raise ServiceError("Gemini API key is not configured")
 
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = genai.GenerativeModel(model_name)
     
     prompt = f"""
     You are a strict question generation bot.
@@ -141,8 +144,15 @@ def process_pdf_and_generate_questions(file_content: bytes, filename: str) -> Li
     clean_text = sanitize_text(raw_text)
     
     # 3. Generate
+    if not api_key:
+        logger.info("No Gemini API key found. Returning dummy data.")
+        return get_dummy_questions()
+
     try:
         return generate_questions_with_gemini(clean_text)
-    except Exception:
-        logger.error("AI Generation failed after retries. Returning dummy data for robustness.")
-        return get_dummy_questions()
+    except Exception as e:
+        # NOTE: Only return dummy data if intentionally configured for it or if API key is missing.
+        # Since we checked for api_key above, this is a real failure.
+        logger.error(f"AI Generation failed: {str(e)}")
+        # We re-raise to notify the user that AI generation actually failed.
+        raise ServiceError("AI generation failed. Please try again later.")
